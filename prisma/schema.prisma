@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Provenance {
+  observed
+  reported
+  hypothesis
+  unknown
+}
+
+enum Stage {
+  intake
+  analyzed
+  inspected
+  hypothesized
+  ran
+  packaged
+}
+
+enum Status {
+  pending
+  Reproduced
+  Not_reproduced
+  Inconclusive
+}
+
+enum RunRole {
+  target
+  control
+}
+
+enum RunOutcome {
+  passed
+  failed
+  error
+  timeout
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+
+  investigations Investigation[] @relation("UserInvestigations")
+}
+
+model Investigation {
+  id          String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation("UserInvestigations", fields: [userId], references: [id], onDelete: Cascade)
+  repoUrl     String
+  owner       String
+  repo        String
+  description String   @db.Text
+  expected    String?  @db.Text
+  actual      String?  @db.Text
+  steps       String?  @db.Text
+  environment String?  @db.Text
+  errorText   String?  @db.Text
+  commitSha   String?
+  controlSha  String?
+  stage       Stage    @default(intake)
+  status      Status   @default(pending)
+  modelId     String?
+  promptVersion String? @default("v0.1")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  evidence    EvidenceItem[]
+  questions   Question[]
+  hypotheses  Hypothesis[]
+  attachments Attachment[]
+  classifications Classification[]
+}
+
+model EvidenceItem {
+  id              String     @id @default(cuid())
+  investigationId String
+  investigation   Investigation @relation(fields: [investigationId], references: [id], onDelete: Cascade)
+  text            String     @db.Text
+  provenance      Provenance
+  source          String
+  createdAt       DateTime   @default(now())
+}
+
+model Question {
+  id              String  @id @default(cuid())
+  investigationId String
+  investigation   Investigation @relation(fields: [investigationId], references: [id], onDelete: Cascade)
+  text            String
+  blocking        Boolean @default(false)
+}
+
+model Hypothesis {
+  id                String  @id @default(cuid())
+  investigationId   String
+  investigation     Investigation @relation(fields: [investigationId], references: [id], onDelete: Cascade)
+  statement         String  @db.Text
+  triggerConditions String  @db.Text
+  expectedFailure   String  @db.Text
+  evidenceNeeded    String  @db.Text
+  rank              Int     @default(1)
+  tests             TestArtifact[]
+  runs              Run[]
+}
+
+model TestArtifact {
+  id           String @id @default(cuid())
+  hypothesisId String
+  hypothesis   Hypothesis @relation(fields: [hypothesisId], references: [id], onDelete: Cascade)
+  path         String
+  content      String @db.Text
+  framework    String @default("vitest")
+}
+
+model Run {
+  id           String     @id @default(cuid())
+  hypothesisId String
+  hypothesis   Hypothesis @relation(fields: [hypothesisId], references: [id], onDelete: Cascade)
+  role         RunRole
+  revisionSha  String?
+  imageDigest  String?
+  command      String
+  exitCode     Int?
+  outcome      RunOutcome
+  durationMs   Int?
+  reportJson   String?    @db.Text
+  stdout       String?    @db.Text
+  stderr       String?    @db.Text
+  truncated    Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+}
+
+model Classification {
+  id              String   @id @default(cuid())
+  investigationId String
+  investigation   Investigation @relation(fields: [investigationId], references: [id], onDelete: Cascade)
+  status          Status
+  rule            String
+  justification   String   @db.Text
+  decidedAt       DateTime @default(now())
+}
+
+model Attachment {
+  id              String   @id @default(cuid())
+  investigationId String
+  investigation   Investigation @relation(fields: [investigationId], references: [id], onDelete: Cascade)
+  publicId        String   @unique
+  secureUrl       String
+  mime            String
+  sizeBytes       Int
+  width           Int?
+  height          Int?
+  geminiFileUri   String?
+  createdAt       DateTime @default(now())
+}

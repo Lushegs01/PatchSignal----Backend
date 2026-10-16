@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.env
+.env.local
+uploads/
+*.db
+devserver.log
+# AI agent working files (local memory, chunks, vectors — never commit)
+.agoya/
