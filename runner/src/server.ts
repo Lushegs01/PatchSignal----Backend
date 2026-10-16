@@ -1,24 +1,63 @@
-// Standalone runner: POST /jobs with Bearer RUNNER_TOKEN, Docker via execFile only.
-// Holds NO app keys. One job at a time (v0.1): simple in-process mutex.
+// Standalone verification runner: POST /jobs with Bearer RUNNER_TOKEN.
+// Docker via execFile only. Holds NO app keys. One job at a time (v0.1).
+//
+// Image contract: repo checked out at /repo with node_modules installed
+// (deps at image build, never at run). Generated test files from the job
+// spec are mounted read-only at /repo/tests/patchsignal/.
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, normalize, sep } from "node:path";
 
 const TOKEN = process.env.RUNNER_TOKEN ?? "";
 const PORT = Number(process.env.RUNNER_PORT ?? 5001);
 const ALLOWED = new Set(["vitest-json"]);
 const TIMEOUT_MS = 120_000;
+const MOUNT_POINT = "/repo/tests/patchsignal";
 
 let busy = false;
 
-function run(cmd: string, args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string; timedOut: boolean }> {
+function run(
+  cmd: string,
+  args: string[],
+  timeoutMs: number
+): Promise<{ code: number; stdout: string; stderr: string; timedOut: boolean }> {
   return new Promise((resolve) => {
-    const child = execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const timedOut = (err as NodeJS.ErrnoException | null)?.code === "ETIMEDOUT" || (err as Error | null)?.message?.includes("ETIMEDOUT") === true;
-      resolve({ code: typeof err?.code === "number" ? err.code : err ? 1 : 0, stdout: String(stdout ?? ""), stderr: String(stderr ?? ""), timedOut });
-    });
-    void child;
+    execFile(
+      cmd,
+      args,
+      { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        const e = err as (NodeJS.ErrnoException & { killed?: boolean }) | null;
+        // execFile timeout kills the CLI as SIGTERM (killed:true); the
+        // container would otherwise be orphaned (--rm only applies on
+        // clean CLI exit), so callers must `docker rm -f` by name.
+        const timedOut =
+          e?.code === "ETIMEDOUT" || e?.killed === true || e?.message?.includes("ETIMEDOUT") === true;
+        resolve({
+          code: typeof err?.code === "number" ? err.code : err ? 1 : 0,
+          stdout: String(stdout ?? ""),
+          stderr: String(stderr ?? ""),
+          timedOut,
+        });
+      }
+    );
   });
+}
+
+async function imageDigest(image: string): Promise<string> {
+  if (image.includes("@sha256:")) return image.split("@sha256:")[1] ?? "";
+  const { code, stdout } = await run("docker", ["image", "inspect", "--format={{.Id}}", image], 30000);
+  return code === 0 ? stdout.trim().replace(/^sha256:/, "") : "";
+}
+
+function safeTestPath(p: string): string | null {
+  const n = normalize(p).replace(/\\/g, "/");
+  if (n.includes("..")) return null;
+  if (!n.startsWith("tests/patchsignal/") || !n.endsWith(".test.ts")) return null;
+  return n;
 }
 
 const server = createServer(async (req, res) => {
@@ -30,7 +69,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(404).end("not found");
     return;
   }
-  if (req.headers.authorization !== `Bearer ${TOKEN}` || !TOKEN) {
+  if (!TOKEN || req.headers.authorization !== `Bearer ${TOKEN}`) {
     res.writeHead(401).end("unauthorized");
     return;
   }
@@ -40,23 +79,50 @@ const server = createServer(async (req, res) => {
   }
   let body = "";
   for await (const c of req) body += c;
-  const spec = JSON.parse(body) as {
-    jobId: string; image: string; command: string; timeoutSec: number;
-    files: { path: string; content: string }[]; repo: { sha: string };
+  let spec: {
+    jobId: string;
+    image: string;
+    command: string;
+    timeoutSec: number;
+    files: { path: string; content: string }[];
+    repo: { owner: string; name: string; sha: string };
   };
+  try {
+    spec = JSON.parse(body);
+  } catch {
+    res.writeHead(400).end("invalid JSON");
+    return;
+  }
   if (!ALLOWED.has(spec.command)) {
     res.writeHead(400).end("command not allowlisted");
     return;
   }
+  if (!spec.image || !Array.isArray(spec.files) || spec.files.length === 0) {
+    res.writeHead(400).end("image and files[] required");
+    return;
+  }
+  const testRel = safeTestPath(spec.files[0]?.path ?? "");
+  if (!testRel) {
+    res.writeHead(400).end("files[0].path must be tests/patchsignal/*.test.ts");
+    return;
+  }
+
   busy = true;
   const started = Date.now();
+  const tmp = await mkdtemp(join(tmpdir(), "ps-"));
   try {
+    for (const f of spec.files) {
+      const rel = safeTestPath(f.path);
+      if (!rel || typeof f.content !== "string" || f.content.length > 200_000) {
+        res.writeHead(400).end("bad file entry");
+        return;
+      }
+      const dest = join(tmp, rel.split("/").pop() as string);
+      await writeFile(dest, f.content, "utf8");
+    }
     const name = `ps_${randomUUID().slice(0, 8)}`;
-    // Write test files into image via a throwaway writer container is out of scope for
-    // tonight's minimal runner: image must already contain repo at SHA; files are
-    // mounted read-only from pre-staged host dir by orchestrator in full deploy.
-    // Here we run the pinned image with the allowlisted command.
-    const vitestCmd = "npx vitest run --reporter=json";
+    // --no-install: never reach the network for packages (there is none).
+    const vitestCmd = `npx --no-install vitest run tests/patchsignal --reporter=json`;
     const args = [
       "run", "--rm", "--name", name,
       "--network", "none",
@@ -65,24 +131,34 @@ const server = createServer(async (req, res) => {
       "--cpus", "1",
       "--memory", "1024m",
       "--pids-limit", "256",
+      "-v", `${tmp}:${MOUNT_POINT}:ro`,
       spec.image,
       "sh", "-c", vitestCmd,
     ];
     const timeoutMs = Math.min((spec.timeoutSec || 120) * 1000, TIMEOUT_MS);
     const { code, stdout, stderr, timedOut } = await run("docker", args, timeoutMs + 5000);
+    // Belt and braces: remove the container even if the CLI was killed.
+    await run("docker", ["rm", "-f", name], 15000);
     const durationMs = Date.now() - started;
     const outcome = timedOut ? "timeout" : code === 0 ? "passed" : code > 0 && code < 125 ? "failed" : "error";
     const trunc = (s: string) => (s.length > 8000 ? s.slice(0, 8000) + "\n…[truncated]" : s);
     res.writeHead(200, { "content-type": "application/json" }).end(
       JSON.stringify({
-        jobId: spec.jobId, exitCode: code, durationMs, outcome,
-        reportJson: "", stdout: trunc(stdout), stderr: trunc(stderr),
-        imageDigest: spec.image.split("@")[1] ?? "", truncated: stdout.length > 8000 || stderr.length > 8000,
+        jobId: spec.jobId,
+        exitCode: code,
+        durationMs,
+        outcome,
+        reportJson: "",
+        stdout: trunc(stdout),
+        stderr: trunc(stderr),
+        imageDigest: await imageDigest(spec.image),
+        truncated: stdout.length > 8000 || stderr.length > 8000,
       })
     );
   } catch (e) {
     res.writeHead(500).end(e instanceof Error ? e.message : "runner error");
   } finally {
+    await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
     busy = false;
   }
 });

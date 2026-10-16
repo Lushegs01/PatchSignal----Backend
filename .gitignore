@@ -5,6 +5,7 @@ node_modules/
 uploads/
 *.db
 devserver.log
+runnersmoke.log
 # AI agent working files (local memory, chunks, vectors — never commit)
 .agoya/
 # Generated deliverables (rebuild via tools/md_to_docx.py)
