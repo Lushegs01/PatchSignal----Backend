@@ -4,6 +4,7 @@ import {
   recordEvidenceFunctionDeclaration,
   recordEvidenceSchema,
 } from "@/lib/evidence/schema";
+import { extractViaGroq } from "@/lib/groq/client";
 
 import { withDeadline } from "@/lib/analysis/deadline";
 
@@ -23,7 +24,17 @@ export async function extractEvidence(input: {
   description: string;
   fields: Record<string, string>;
   imageParts: { fileUri: string; mimeType: string }[];
+  imageUrls?: string[];
 }) {
+  // Groq provider (presentation reliability): same schema, same validation.
+  // modelId records exactly which model answered — stays honest in the package.
+  if (config.modelProvider === "groq") {
+    return extractViaGroq({
+      description: input.description,
+      fields: input.fields,
+      imageUrls: input.imageUrls ?? [],
+    });
+  }
   const ai = client();
   const dataBlocks = [
     wrapData("description", input.description),

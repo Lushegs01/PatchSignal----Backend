@@ -9,7 +9,7 @@ export async function GET() {
       title: "PatchSignal backend",
       version: "0.1.0",
       description:
-        "Evidence-backed bug investigation API. Flow: POST /api/investigations → analyze → inspect → hypotheses → runs → package. Without DATABASE_URL the API uses a process-memory store; without GEMINI_API_KEY /analyze queues labelled cached demo extraction.",
+        "Evidence-backed bug investigation API. Flow: POST /api/investigations → analyze → inspect → hypotheses → runs → package. Without DATABASE_URL the API uses a process-memory store; without the selected provider API key /analyze queues labelled cached demo extraction.",
     },
     servers: [{ url: "http://localhost:3000" }],
     components: {

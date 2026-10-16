@@ -6,7 +6,7 @@ Model generation is limited to one primary and one fallback attempt, each with a
 
 ## Checks
 
-23 tests across seven suites pass (`npm test -- --maxWorkers=1 --minWorkers=1`).
+25 tests across eight suites pass (`npm test -- --maxWorkers=1 --minWorkers=1`).
 
 - Backend production Next build passes, including instrumentation compilation and route generation.
 - TypeScript and Prisma schema validation pass.
@@ -22,3 +22,5 @@ Model generation is limited to one primary and one fallback attempt, each with a
 4. Verify a service restart resumes queued/expired jobs. Existing authenticated investigation reads remain ownership-scoped.
 
 The repository account has read-only upstream access, so this delivery uses a fork PR. Production deployment and live database verification require the upstream owner. The timer worker is not suitable for ephemeral serverless backends. An idle Render free service cannot process jobs while asleep; work resumes when the service wakes.
+
+Upstream added a Groq provider while this PR was being implemented. The merge preserves MODEL_PROVIDER selection and screenshot URL forwarding, uses the selected provider key for cache fallback, and bounds Groq response/body reads to two 25-second attempts as well.

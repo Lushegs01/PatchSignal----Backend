@@ -9,8 +9,10 @@ export async function runOne() {
   try {
     const inv=await getInvestigation(job.investigationId);
     if(!inv)throw new Error("Investigation removed");
-    const result=config.geminiApiKey ? await extractEvidence({description:inv.description,fields:{expected:inv.expected??"",actual:inv.actual??"",steps:inv.steps??"",environment:inv.environment??"",error:inv.errorText??""},imageParts:[]}) : {evidence:cachedDemoEvidence(),modelId:"cached-demo"};
-    await complete(job,recordEvidenceSchema.parse(result.evidence),result.modelId,!config.geminiApiKey);
+    const hasKey=config.modelProvider === "groq" ? !!config.groqApiKey : !!config.geminiApiKey;
+    const imageUrls=inv.attachments.map(file=>file.secureUrl).filter(url=>url.startsWith("https://")).slice(0,3);
+    const result=hasKey ? await extractEvidence({description:inv.description,fields:{expected:inv.expected??"",actual:inv.actual??"",steps:inv.steps??"",environment:inv.environment??"",error:inv.errorText??""},imageParts:[],imageUrls}) : {evidence:cachedDemoEvidence(),modelId:"cached-demo"};
+    await complete(job,recordEvidenceSchema.parse(result.evidence),result.modelId,!hasKey);
   } catch {await fail(job);}
   return true;
 }
