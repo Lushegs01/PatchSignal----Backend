@@ -53,41 +53,37 @@ export async function extractEvidence(input: {
       },
     });
 
-  let res = await attempt(config.gemmaPrimary);
-  let args = firstFunctionArgs(res);
-  let parsed = args ? recordEvidenceSchema.safeParse(args) : { success: false as const, error: "no function call" };
-  let lastError = "no function call";
+  // Retry schedule: ride out transient 500s and 503 demand spikes.
+  // Waits are pre-attempt delays: [0, 3s, 8s | switch model | 5s, 10s].
+  const schedule: { model: string; waitMs: number }[] = [
+    { model: config.gemmaPrimary, waitMs: 0 },
+    { model: config.gemmaPrimary, waitMs: 3000 },
+    { model: config.gemmaPrimary, waitMs: 8000 },
+    { model: config.gemmaFallback, waitMs: 5000 },
+    { model: config.gemmaFallback, waitMs: 10000 },
+  ];
+  let lastError = "no attempts made";
 
-  if (!parsed || parsed.success === false) {
-    lastError =
-      !parsed || !("success" in parsed) || parsed.success === false
-        ? JSON.stringify(parsed).slice(0, 1000)
-        : "schema failure";
-    // one retry with backoff (EVD-6). Transient Gemini 500s are common.
-    await sleep(2000);
+  for (const { model, waitMs } of schedule) {
+    if (waitMs) await sleep(waitMs);
     try {
-      const retry = await attempt(config.gemmaPrimary);
-      const retryArgs = firstFunctionArgs(retry);
-      const reparsed = retryArgs ? recordEvidenceSchema.safeParse(retryArgs) : null;
-      if (reparsed?.success) return { evidence: reparsed.data, modelId: config.gemmaPrimary };
+      const res = await attempt(model);
+      const args = firstFunctionArgs(res);
+      if (!args) {
+        lastError = `${model}: no function call in response`;
+        continue;
+      }
+      const parsed = recordEvidenceSchema.safeParse(args);
+      if (parsed.success) return { evidence: parsed.data, modelId: model };
+      lastError = `${model}: schema failure ${JSON.stringify(parsed).slice(0, 500)}`;
     } catch (e) {
-      lastError = e instanceof Error ? e.message : String(e);
+      // 503 UNAVAILABLE / 500 INTERNAL: demand spikes, usually temporary.
+      lastError = `${model}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 500);
     }
-    // fallback model, then give up with a descriptive error.
-    await sleep(2000);
-    try {
-      const fb = await attempt(config.gemmaFallback);
-      const fbArgs = firstFunctionArgs(fb);
-      const fbParsed = fbArgs ? recordEvidenceSchema.safeParse(fbArgs) : null;
-      if (fbParsed?.success) return { evidence: fbParsed.data, modelId: config.gemmaFallback };
-    } catch (e) {
-      lastError = e instanceof Error ? e.message : String(e);
-    }
-    throw new Error(
-      `Gemma extraction failed on ${config.gemmaPrimary} (retry) and ${config.gemmaFallback} (fallback). Last: ${lastError.slice(0, 500)}`
-    );
   }
-  return { evidence: parsed.data, modelId: config.gemmaPrimary };
+  throw new Error(
+    `Gemma extraction failed after ${schedule.length} attempts (${config.gemmaPrimary} x3, ${config.gemmaFallback} x2). Last: ${lastError}. Spikes are usually temporary — retry in a minute.`
+  );
 }
 
 function sleep(ms: number): Promise<void> {

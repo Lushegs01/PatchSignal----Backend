@@ -9,8 +9,3 @@ export async function GET(req: Request, { params }: { params: Promise<{ attachme
   const { attachmentId } = await params;
   return NextResponse.json({ attachmentId, note: "fetch secureUrl from GET /api/investigations/:id" }, { status: 200 });
 }
-
-export function resolveAttachment(inv: unknown, attachmentId: string): string | null {
-  const list = (inv as { attachments?: { publicId: string; secureUrl: string }[] }).attachments ?? [];
-  return list.find((a) => a.publicId === attachmentId)?.secureUrl ?? null;
-}
