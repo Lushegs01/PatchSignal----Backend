@@ -232,6 +232,14 @@ export async function GET() {
           responses: { "200": { description: "{ markdown, issueUrl, copyToClipboard }" } },
         },
       },
+      "/api/files/{attachmentId}": {
+        get: {
+          tags: ["investigations"],
+          summary: "Attachment lookup (secureUrl lives on Cloudinary CDN)",
+          parameters: [{ name: "attachmentId", in: "path", required: true, schema: { type: "string" } }],
+          responses: { "200": { description: "{ attachmentId, note }" } },
+        },
+      },
     },
   });
 }

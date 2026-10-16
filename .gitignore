@@ -7,3 +7,5 @@ uploads/
 devserver.log
 # AI agent working files (local memory, chunks, vectors — never commit)
 .agoya/
+# Generated deliverables (rebuild via tools/md_to_docx.py)
+PatchSignal-API-Reference.docx
