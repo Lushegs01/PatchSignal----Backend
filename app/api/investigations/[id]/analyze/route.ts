@@ -34,6 +34,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
+    // Screenshot CDN URLs double as vision inputs for URL-capable providers.
+    const imageUrls = (
+      (inv as unknown as { attachments?: { secureUrl: string }[] }).attachments ?? []
+    )
+      .map((a) => a.secureUrl)
+      .filter((u) => typeof u === "string" && u.startsWith("http"))
+      .slice(0, 3);
     const { evidence, modelId } = await extractEvidence({
       description: inv.description,
       fields: {
@@ -41,6 +48,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         environment: inv.environment ?? "", error: inv.errorText ?? "",
       },
       imageParts: [],
+      imageUrls,
     });
     if (useMemoryStore()) memoryStore.update(id, { evidence, stage: "analyzed" });
     else {

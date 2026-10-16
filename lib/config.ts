@@ -10,6 +10,9 @@ export const config = {
   runnerToken: process.env.RUNNER_TOKEN ?? "",
   runnerUrl: process.env.RUNNER_URL ?? "http://localhost:5001",
   controlSha: process.env.CONTROL_SHA ?? "",
+  modelProvider: (process.env.MODEL_PROVIDER ?? "gemini") as "gemini" | "groq",
+  groqApiKey: process.env.GROQ_API_KEY ?? "",
+  groqModel: process.env.GROQ_MODEL ?? "",
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? "",
     apiKey: process.env.CLOUDINARY_API_KEY ?? "",
