@@ -28,6 +28,9 @@ function corsHeaders(origin: string | null): Record<string, string> {
 }
 
 export function middleware(req: NextRequest) {
+  // Production next start logs nothing per request — this line is the API
+  // activity feed in Render logs (method + path, no secrets/headers/bodies).
+  console.log(`[api] ${req.method} ${req.nextUrl.pathname}`);
   const headers = corsHeaders(req.headers.get("origin"));
   if (req.method === "OPTIONS") {
     return new NextResponse(null, { status: 204, headers });
