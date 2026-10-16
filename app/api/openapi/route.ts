@@ -101,6 +101,14 @@ export async function GET() {
         },
       },
       "/api/investigations": {
+        get: {
+          tags: ["investigations"],
+          summary: "List your investigations (newest 50, summary fields)",
+          responses: {
+            "200": { description: "{ items: [{ id, repoUrl, owner, repo, description, stage, status, createdAt }] }" },
+            "401": { description: "missing/invalid token" },
+          },
+        },
         post: {
           tags: ["investigations"],
           summary: "Stage 1: intake (multipart)",

@@ -119,6 +119,17 @@ const r = await fetch(base + "/api/investigations", { method: "POST",
 // do NOT set content-type manually — the browser adds the multipart boundary
 ```
 
+### GET /api/investigations — list (Bearer)
+
+Newest 50 investigations owned by the caller, summary fields only (fetch detail with `GET /:id`).
+
+```
+// 200
+{ "items": [ { "id": "inv_e0497925", "repoUrl": "https://github.com/...", "owner": "...", "repo": "...",
+  "description": "...", "stage": "packaged", "status": "Reproduced",
+  "createdAt": "2026-10-16T14:19:53.183Z", "updatedAt": "..." } ] }
+```
+
 ### GET /api/investigations/:id — full state (Bearer)
 
 Returns the investigation with nested `evidence[]`, `questions[]`, `hypotheses[]` (each with `tests[]`, `runs[]`), `attachments[]`, `classifications[]`, plus `stage`, `status`, `commitSha`, `controlSha`. This is the main read model for evidence-review screens. `404` when missing or owned by another user.

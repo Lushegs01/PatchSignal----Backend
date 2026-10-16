@@ -55,6 +55,15 @@ $env:RUNNER_TOKEN="<same as .env>"; $env:RUNNER_PORT="5001"; npm run runner:dev
 
 Test flow: signup → Authorize in `/docs` → `POST /api/investigations` → `analyze` → `inspect` → `hypotheses` → `runs` → `package`. Full curl transcript in `BACKEND_TESTING.md`; frontend contract in `docs/API_REFERENCE.md`.
 
+## Demo data
+
+`lib/demo/` seeds a demo account (`demo@patchsignal.dev`) with 9 investigations in fictional `patchsignal/demo-*` repos covering every stage (intake → packaged) and every verdict. Run output comes from real Vitest runs of each repro test (`lib/demo/captured.json`); verdicts are computed by `classify()` at seed time; evidence text is hand-written in the `/analyze` shape (`modelId: demo-seed`), and screenshots upload to Cloudinary when configured. Seeding replaces the `inv_demo*` records each time, so re-running resets the demo.
+
+- Local: `npm run db:seed` (reads `.env.local`/`.env`; `-- --reset` also deletes the demo account's other investigations)
+- Deployed: set `SEED_TOKEN` on the service, then
+  `curl -X POST https://<backend>/api/demo/seed -H "Authorization: Bearer $SEED_TOKEN" -H "content-type: application/json" -d '{"reset":true}'`
+  (404 while `SEED_TOKEN` is unset). Credentials: `SEED_DEMO_EMAIL` / `SEED_DEMO_PASSWORD`, or `{"password":"..."}` in the body; default password `patchsignal-demo-2026`.
+
 ## Deploy (Render)
 
 - Build command: `npm install; npx prisma migrate deploy; npm run build`

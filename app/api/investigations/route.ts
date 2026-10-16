@@ -18,6 +18,37 @@ function parseRepo(url: string): { owner: string; repo: string } | null {
   }
 }
 
+// Newest first, scoped to the caller. Summary fields only — detail via GET /:id.
+const LIST_LIMIT = 50;
+
+export async function GET(req: NextRequest) {
+  const auth = await authUser(req);
+  if (auth instanceof NextResponse) return auth;
+
+  if (useMemoryStore()) {
+    const items = memoryStore
+      .list()
+      .filter((inv) => inv.userId === auth.userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, LIST_LIMIT)
+      .map(({ id, repoUrl, owner, repo, description, stage, status, createdAt }) => ({
+        id, repoUrl, owner, repo, description, stage, status, createdAt,
+      }));
+    return NextResponse.json({ items });
+  }
+
+  const items = await prisma.investigation.findMany({
+    where: { userId: auth.userId },
+    orderBy: { createdAt: "desc" },
+    take: LIST_LIMIT,
+    select: {
+      id: true, repoUrl: true, owner: true, repo: true, description: true,
+      stage: true, status: true, createdAt: true, updatedAt: true,
+    },
+  });
+  return NextResponse.json({ items });
+}
+
 export async function POST(req: NextRequest) {
   const auth = await authUser(req);
   if (auth instanceof NextResponse) return auth;
